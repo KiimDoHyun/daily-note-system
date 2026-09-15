@@ -20,7 +20,8 @@ from lib.config import (
 
 DAILY_NAME_RE = re.compile(r"^📅 (\d{4}-\d{2}-\d{2})\.md$")
 YM_DIR_RE = re.compile(r"^\d{4}-\d{2}$")
-FOOTER_MARKER = "📎 마커:"
+FOOTER_MARKER = "📎 마커"
+FOOTER_START_MARKER_RE = re.compile(r"^---\s*$")
 
 
 def find_daily_notes(root: Path):
@@ -41,7 +42,7 @@ def find_daily_notes(root: Path):
     return notes
 
 
-def compute_changes(text: str, note_date: date, add_footer: bool):
+def compute_changes(text: str, note_date: date, add_footer: bool, replace_footer: bool = False):
     new = text
     changes = []
 
@@ -52,19 +53,51 @@ def compute_changes(text: str, note_date: date, add_footer: bool):
         new = new.replace(SECTION_CARRYOVER_OLD, SECTION_CARRYOVER_NEW)
         changes.append("섹션명: 미완료 이월 → 이월된 할일")
 
-    if add_footer and FOOTER_MARKER not in new:
-        footer = FOOTER.format(
-            summary_link=monthly_summary_wikilink(note_date),
-            drop_link=monthly_drop_wikilink(note_date),
-        )
-        if not new.endswith("\n"):
-            new += "\n"
-        if not new.endswith("\n\n"):
-            new += "\n"
-        new += footer + "\n"
+    if not add_footer:
+        return new, changes
+
+    footer = FOOTER.format(
+        summary_link=monthly_summary_wikilink(note_date),
+        drop_link=monthly_drop_wikilink(note_date),
+    )
+    has_footer = FOOTER_MARKER in new
+
+    if has_footer and replace_footer:
+        new = _strip_existing_footer(new)
+        new = _append_footer(new, footer)
+        changes.append("하단 안내 블록 갱신")
+    elif not has_footer:
+        new = _append_footer(new, footer)
         changes.append("하단 안내 블록 추가")
 
     return new, changes
+
+
+def _append_footer(text: str, footer: str) -> str:
+    if not text.endswith("\n"):
+        text += "\n"
+    if not text.endswith("\n\n"):
+        text += "\n"
+    return text + footer + "\n"
+
+
+def _strip_existing_footer(text: str) -> str:
+    lines = text.splitlines()
+    footer_start_idx = None
+    for i, line in enumerate(lines):
+        if line.strip() == "---" and any(
+            FOOTER_MARKER in lines[j] for j in range(i + 1, min(i + 8, len(lines)))
+        ):
+            footer_start_idx = i
+            break
+    if footer_start_idx is None:
+        return text
+    while footer_start_idx > 0 and lines[footer_start_idx - 1].strip() == "":
+        footer_start_idx -= 1
+    trimmed = lines[:footer_start_idx]
+    while trimmed and trimmed[-1].strip() == "":
+        trimmed.pop()
+    return "\n".join(trimmed) + "\n"
 
 
 def main():
@@ -73,6 +106,7 @@ def main():
     )
     parser.add_argument("--apply", action="store_true", help="실제 파일 수정 (기본은 dry-run)")
     parser.add_argument("--no-footer", action="store_true", help="섹션명만 변경, 하단 안내 안 붙임")
+    parser.add_argument("--replace-footer", action="store_true", help="기존 안내가 있어도 새 포맷으로 재작성")
     args = parser.parse_args()
 
     add_footer = not args.no_footer
@@ -83,7 +117,7 @@ def main():
     changed = []
     for d, path in notes:
         original = path.read_text(encoding="utf-8")
-        new_text, changes = compute_changes(original, d, add_footer)
+        new_text, changes = compute_changes(original, d, add_footer, args.replace_footer)
         if changes:
             changed.append((path, changes))
             if args.apply:
