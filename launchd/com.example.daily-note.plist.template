@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.daily-note</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>{{REPO_ROOT}}/daily_note.py</string>
+        <string>create</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>DAILY_NOTE_VAULT_ROOT</key>
+        <string>{{VAULT_ROOT}}</string>
+        <key>DAILY_NOTE_LOG_DIR</key>
+        <string>{{LOG_DIR}}</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{{LOG_DIR}}/daily-note.log</string>
+    <key>StandardErrorPath</key>
+    <string>{{LOG_DIR}}/daily-note-error.log</string>
+</dict>
+</plist>
