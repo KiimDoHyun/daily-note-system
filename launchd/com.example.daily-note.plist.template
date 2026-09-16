@@ -3,12 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.example.daily-note</string>
+    <string>{{LABEL}}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
-        <string>{{REPO_ROOT}}/daily_note.py</string>
-        <string>create</string>
+        <string>/bin/bash</string>
+        <string>{{REPO_ROOT}}/launchd/run-with-retry.sh</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>

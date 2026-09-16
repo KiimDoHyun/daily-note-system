@@ -33,9 +33,12 @@
 ```
 daily-note-system/
 ├── daily_note.py           # CLI 진입점
+├── install.sh              # 설치 자동화 (위치 검사 포함)
 ├── lib/                    # 라이브러리 모듈
+├── launchd/
+│   ├── com.example.daily-note.plist.template
+│   └── run-with-retry.sh   # 부팅 시 감독 스크립트 (재시도 + 실패 알림)
 ├── tests/                  # unittest 테스트
-├── launchd/                # macOS launchd plist 템플릿
 └── docs/design.md          # 설계 문서
 ```
 
@@ -54,6 +57,21 @@ YourVault/
     └── 2026-10/...
 ```
 
+## ⚠️ 설치 전 반드시 읽을 것 — 클론 위치
+
+**다음 폴더 안에는 클론하지 마세요.**
+
+- `~/Documents/`
+- `~/Desktop/`
+- `~/Downloads/`
+- 아이클라우드 드라이브 폴더 (`~/Library/Mobile Documents/`)
+
+macOS의 파일 접근 통제 시스템(TCC) 이 이 폴더들을 잠급니다. 리포가 이 안에 있으면 **macOS 부팅 직후 launchd 가 파이썬 스크립트를 실행하려다 "Operation not permitted" 로 튕깁니다.** 사용자가 로그인해서 수동으로 실행하면 되지만, 매일 아침 자동으로 도는 이 프로젝트의 목적을 잃습니다.
+
+**권장 위치**: `~/daily-note-system/` (홈 폴더 바로 아래)
+
+`install.sh` 는 실행 위치를 검사해서 잠긴 폴더 안이면 즉시 중단합니다. 상세 배경은 [CLAUDE.md](CLAUDE.md) 의 "왜 홈 폴더에 놓아야 하나" 참고.
+
 ## 설치
 
 ### 요구사항
@@ -64,43 +82,63 @@ YourVault/
 
 ### 절차
 
-1. 저장소 클론
+1. 저장소 클론 — **반드시 홈 폴더 바로 아래**
+
    ```bash
    git clone https://github.com/KiimDoHyun/daily-note-system.git ~/daily-note-system
-   ```
-
-2. 로그 디렉터리 생성
-   ```bash
-   mkdir -p ~/.local/state/daily-note
-   ```
-
-3. 동작 확인
-   ```bash
    cd ~/daily-note-system
-   DAILY_NOTE_VAULT_ROOT="/path/to/your/Obsidian Vault" \
-     /usr/bin/python3 daily_note.py dry-run
    ```
 
-4. launchd plist 생성
+2. 설치 스크립트 실행
+
    ```bash
-   sed \
-     -e "s#{{REPO_ROOT}}#$HOME/daily-note-system#g" \
-     -e "s#{{VAULT_ROOT}}#$HOME/Documents/Obsidian Vault#g" \
-     -e "s#{{LOG_DIR}}#$HOME/.local/state/daily-note#g" \
-     launchd/com.example.daily-note.plist.template \
-     > ~/Library/LaunchAgents/com.example.daily-note.plist
+   ./install.sh
    ```
 
-5. 전체 디스크 접근 권한 부여
-   - 시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근
+   실행 위치 검사 → 볼트 경로 확인 → plist 생성 → launchd 로드 까지 자동으로 처리.
+   볼트 경로를 미리 지정하려면:
+
+   ```bash
+   ./install.sh "$HOME/Documents/Obsidian Vault"
+   ```
+
+3. 전체 디스크 접근 권한 부여 (**필수**)
+
+   - 시스템 설정 → 개인정보 보호 및 보안 → 전체 디스크 접근 권한
    - `+` 클릭 → `Cmd+Shift+G` → `/usr/bin/python3` 추가 후 토글 켬
-   - 볼트가 `~/Documents/` 안에 있을 때 필수
 
-6. launchd 로드
+4. 즉시 시험 실행
+
    ```bash
-   launchctl load ~/Library/LaunchAgents/com.example.daily-note.plist
    launchctl kickstart -k "gui/$(id -u)/com.example.daily-note"
    ```
+
+5. 설치 상태 확인
+
+   ```bash
+   /usr/bin/python3 ~/daily-note-system/daily_note.py doctor
+   ```
+
+## 부팅 시 자동 실행이 실패한다면
+
+부팅 직후 몇 초 동안 macOS 문지기 데몬이 완전히 준비되지 않아 실행이 튕길 수 있습니다. `launchd/run-with-retry.sh` 감독 스크립트가 자동으로 대응합니다.
+
+1. 사용자 세션 앵커(Finder) 가 뜰 때까지 최대 30초 대기
+2. 파이썬 실행 실패 시 5초 간격으로 최대 10회 재시도
+3. 그래도 실패하면 **진단 파일을 남기고 알림 표시**
+   - 진단 파일: `~/.local/state/daily-note/last-failure.txt`
+   - 알림에 진단 파일 경로가 함께 표시됨
+
+알림을 받은 뒤 대응 순서:
+
+1. 진단 파일을 열어 실패 지점 확인
+2. `doctor` 명령으로 환경 재확인
+3. 세션이 살아있는 상태라면 즉시 재시도:
+   ```bash
+   launchctl kickstart -k "gui/$(id -u)/com.example.daily-note"
+   ```
+
+첫 실패 알림이 조용히 사라지면 macOS 알림 권한이 필요할 수 있습니다. 알림 센터 설정에서 "스크립트 편집기" 항목이 허용 상태인지 확인하세요.
 
 ## 사용법
 
@@ -111,6 +149,7 @@ python3 daily_note.py create                  # 오늘 데일리 노트 생성 (
 python3 daily_note.py dry-run                 # 파일 수정 없이 예상 동작만 출력
 python3 daily_note.py force 2026-09-15        # 특정 날짜 강제 재생성
 python3 daily_note.py recompute 2026-09       # 특정 월 종합 상단 요약 재계산
+python3 daily_note.py doctor                  # 설치 환경 진단 리포트
 ```
 
 `--today YYYY-MM-DD` 옵션으로 "오늘" 을 임의 날짜로 오버라이드 가능. 테스트·과거 노트 재생성에 유용.
@@ -147,6 +186,11 @@ cd daily-note-system
 | `DAILY_NOTE_VAULT_ROOT` | O | 볼트 루트 절대 경로 |
 | `DAILY_NOTE_NOTES_SUBDIR` | X | 볼트 안 노트 하위 폴더 (기본 `Notes`) |
 | `DAILY_NOTE_LOG_DIR` | X | 로그 디렉터리 (기본 `~/.local/state/daily-note`) |
+| `DAILY_NOTE_LABEL` | X | launchd Label (기본 `com.example.daily-note`) |
+| `DAILY_NOTE_MAX_ATTEMPTS` | X | 감독 스크립트 재시도 횟수 (기본 10) |
+| `DAILY_NOTE_RETRY_INTERVAL` | X | 재시도 간격 초 (기본 5) |
+| `DAILY_NOTE_FINDER_WAIT` | X | Finder 대기 초 (기본 30) |
+| `DAILY_NOTE_PYTHON` | X | 파이썬 실행 파일 경로 (기본 `/usr/bin/python3`) |
 
 ## 라이센스
 

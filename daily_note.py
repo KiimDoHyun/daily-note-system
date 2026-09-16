@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import subprocess
 import sys
@@ -8,9 +10,6 @@ from pathlib import Path
 from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from lib.config import ERROR_LOG_PATH, LOG_PATH
-from lib.orchestrator import RunResult, run_create, run_force, run_recompute
 
 
 def main(argv: Optional[list] = None) -> int:
@@ -30,7 +29,18 @@ def main(argv: Optional[list] = None) -> int:
     p_force = sub.add_parser("force", help="특정 날짜 데일리 노트 강제 재생성")
     p_force.add_argument("date", help="YYYY-MM-DD")
 
+    sub.add_parser("doctor", help="설치 환경 진단 리포트 출력")
+
     args = parser.parse_args(argv)
+
+    # doctor 는 볼트 설정 없이도 돌아야 하므로 config 를 건드리지 않는다.
+    if args.cmd == "doctor":
+        from lib.doctor import run_doctor
+        return run_doctor()
+
+    # 나머지 명령은 lib.config 가 필요하다. 여기서 import 하면
+    # DAILY_NOTE_VAULT_ROOT 미설정 시 이 시점에 실패하므로 진단이 쉬워진다.
+    from lib.orchestrator import run_create, run_force, run_recompute
 
     try:
         if args.cmd == "create":
@@ -111,6 +121,7 @@ def _log_dry_run(result: RunResult) -> None:
 def _log(message: str) -> None:
     print(message)
     try:
+        from lib.config import LOG_PATH
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with LOG_PATH.open("a", encoding="utf-8") as f:
             f.write(message + "\n")
@@ -122,6 +133,7 @@ def _log_error(exc: Exception) -> None:
     trace = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     print(trace, file=sys.stderr)
     try:
+        from lib.config import ERROR_LOG_PATH
         ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with ERROR_LOG_PATH.open("a", encoding="utf-8") as f:
             f.write(trace + "\n")
